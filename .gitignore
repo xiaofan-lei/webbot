@@ -1,4 +1,4 @@
 config.py
 config_web.py
-__*
+__pycache*
 /venv/
