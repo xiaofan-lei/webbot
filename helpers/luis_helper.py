@@ -7,8 +7,6 @@ from botbuilder.core import IntentScore, TopIntent, TurnContext
 
 from booking_details import BookingDetails
 
-
-
 from word2number.w2n import word_to_num
 def int_extraction(text):
     number =[]

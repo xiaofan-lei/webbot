@@ -16,7 +16,6 @@ from botbuilder.core import (
 )
 from botbuilder.schema import InputHints
 
-
 from booking_details import BookingDetails
 from flight_booking_recognizer import FlightBookingRecognizer
 from helpers.luis_helper import LuisHelper, Intent
@@ -34,15 +33,20 @@ class MainDialog(ComponentDialog):
 
         text_prompt = TextPrompt(TextPrompt.__name__)
         text_prompt.telemetry_client = self.telemetry_client
+        
 
         booking_dialog.telemetry_client = self.telemetry_client
 
         wf_dialog = WaterfallDialog(
-            "WFDialog", [self.intro_step, self.act_step, self.summary_step, self.final_step]
+            "WFDialog", [self.intro_step, self.luis_step, self.act_step, self.summary_step, self.final_step]
         )
         wf_dialog.telemetry_client = self.telemetry_client
 
         self._luis_recognizer = luis_recognizer
+        self._luis_text = None
+        self._luis_top_intent = False
+        self._luis_entities_recongized = False        
+        self._luis_result = BookingDetails()
         self._booking_dialog_id = booking_dialog.id
 
         self.add_dialog(text_prompt)
@@ -74,8 +78,8 @@ class MainDialog(ComponentDialog):
         return await step_context.prompt(
                 TextPrompt.__name__, PromptOptions(prompt=prompt_message)
             )
-
-    async def act_step(self, step_context: WaterfallStepContext) -> DialogTurnResult:
+        
+    async def luis_step(self, step_context: WaterfallStepContext) -> DialogTurnResult:
         if not self._luis_recognizer.is_configured:
             # LUIS is not configured, we just run the BookingDialog path with an empty BookingDetailsInstance.
             return await step_context.begin_dialog(
@@ -85,8 +89,11 @@ class MainDialog(ComponentDialog):
         intent, luis_result = await LuisHelper.execute_luis_query(
             self._luis_recognizer, step_context.context
         )
+        self._luis_text = step_context.result
 
         if intent == Intent.BOOK_FLIGHT.value and luis_result:
+            self._luis_top_intent = intent
+
             origin = f" from {luis_result.origin}" if luis_result.origin else ""
             destination = f" to {luis_result.destination}" if luis_result.destination else ""
             travel_start_date =f" leaving on {luis_result.travel_start_date}" if luis_result.travel_start_date else "" 
@@ -95,57 +102,62 @@ class MainDialog(ComponentDialog):
             budget = f" with a budget of {luis_result.budget}" if luis_result.budget else ""
             luis_entities =  f"{origin}{destination}{travel_start_date}{travel_end_date}{n_passengers}{budget}"
 
-            #request for more details
-            q_origin = "" if luis_result.origin else f", departure city" 
-            q_destination = "" if luis_result.destination else f", destination"
-            q_travel_start_date = "" if luis_result.travel_start_date else f", leaving date"
-            q_travel_end_date = "" if luis_result.travel_end_date else f", return date"
-            q_n_passengers = "" if luis_result.n_passengers else f", number of passengers"
-            q_budget = "" if luis_result.budget else f", budget"
-            request_list = f"{q_origin}{q_destination}{q_travel_start_date}{q_travel_end_date}{q_n_passengers}{q_budget}"
-
-            #summary message
-            summary_text = (
-                f"Got you. A flight {luis_entities}."
-            )
-            summary_message = MessageFactory.text(summary_text, summary_text, InputHints.ignoring_input)
-            await step_context.context.send_activity(summary_message)
+            if len(luis_entities)>0:
+                self._luis_result = luis_result
+                self._luis_entities_recongized = True
+                #summary message
+                summary_text = ( f"Got you, a flight {luis_entities}. Do you want to proceed?" )
+            else:
+                summary_text = ( f"Ok, you'd like to book a flight. Do you want to proceed?")
             
-            #if complementary information is needed
-            if len(request_list)>0:
-                compl_text = (
-                    f"To proceed with your request, I'd also need to know other information about your {request_list[1:]}."
-                )
-                compl_message = MessageFactory.text(compl_text, compl_text, InputHints.ignoring_input)
-                await step_context.context.send_activity(compl_message)
-
+            # Offer a YES/NO prompt.            
+            return await step_context.prompt(
+                    ConfirmPrompt.__name__, PromptOptions(prompt=MessageFactory.text(summary_text))
+                )               
 
         else:
-            didnt_understand_text = (
-                "Sorry, I didn't get that. Please tell me about your travel dates, departure city, destination, number of travelers and budget."
+            summary_text = (
+                "Sorry, I didn't get that. Would you like to book a flight?"
             )
-            didnt_understand_message = MessageFactory.text(
-                didnt_understand_text, didnt_understand_text, InputHints.ignoring_input
-            )
-            await step_context.context.send_activity(didnt_understand_message)
+            
+        # Offer a YES/NO prompt.            
+        return await step_context.prompt(
+                ConfirmPrompt.__name__, PromptOptions(prompt=MessageFactory.text(summary_text))
+            )               
 
-        # Run the BookingDialog giving it whatever details we have from the LUIS call.
-        return await step_context.begin_dialog(self._booking_dialog_id, luis_result)
-        #return await step_context.next(None)
+    async def act_step(self, step_context: WaterfallStepContext) -> DialogTurnResult:
+        #send the luis result to application insights
+        self.telemetry_client.track_trace("luis_result", 
+                            {'user_message' : self._luis_text,
+                            'luis_top_intent' : self._luis_top_intent,
+                            'luis_entities_recongized' : self._luis_entities_recongized,
+                            'user_proceeded': True if step_context.result else False,
+                            'dst_city' : self._luis_result.origin,
+                            'or_city' : self._luis_result.destination,
+                            'start_date' : self._luis_result.travel_start_date,
+                            'end_date' : self._luis_result.travel_end_date,
+                            'n_passengers' : self._luis_result.n_passengers,
+                            'budgdet': self._luis_result.budget,
+                            })
+        self.telemetry_client.flush()
+        
+        if step_context.result: 
+            #user wants to proceed the booking process
+            # Run the BookingDialog giving it whatever details we have from the LUIS call.
+            return await step_context.begin_dialog(self._booking_dialog_id, self._luis_result )
+        else:
+             return await step_context.end_dialog()
 
     async def summary_step(self, step_context: WaterfallStepContext) -> DialogTurnResult:
         # If the child dialog ("BookingDialog") was cancelled or the user failed to confirm,
         # the Result here will be null.
-        if step_context.result is not None:
-            result = step_context.result
+        result = step_context.result
 
-            # Now we have all the booking details call the booking service.
-
+        if result is not None:
+        # Now we have all the booking details call the booking service.
+            msg_txt = (f"I have you booked to {result.destination} from {result.origin} on {result.travel_start_date} and back on {result.travel_end_date}"
+                f" for { result.n_passengers} people, with a budget of { result.budget}$.")
             # If the call to the booking service was successful tell the user.
-            msg_txt =( 
-                f"I have you booked to {result.destination} from {result.origin} on {result.travel_start_date} and back on {result.travel_end_date}"
-                f" for { result.n_passengers} people, with a budget of { result.budget} $."
-                )
             message = MessageFactory.text(msg_txt, msg_txt, InputHints.ignoring_input)
             await step_context.context.send_activity(message)
 
