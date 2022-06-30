@@ -127,11 +127,9 @@ class MainDialog(ComponentDialog):
 
     async def act_step(self, step_context: WaterfallStepContext) -> DialogTurnResult:
         #send the luis result to application insights
-        self.telemetry_client.track_trace("luis_result", 
+        self.telemetry_client.track_trace("luis_sucess_result" if step_context.result else "luis_failed_result", 
                             {'user_message' : self._luis_text,
                             'luis_top_intent' : self._luis_top_intent,
-                            'luis_entities_recongized' : self._luis_entities_recongized,
-                            'user_proceeded': True if step_context.result else False,
                             'dst_city' : self._luis_result.origin,
                             'or_city' : self._luis_result.destination,
                             'start_date' : self._luis_result.travel_start_date,
