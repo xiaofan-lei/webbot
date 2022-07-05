@@ -1,4 +1,6 @@
 config.py
 config_web.py
-__pycache*
+__pycache__
 /venv/
+.vscode
+.pytest_cache
