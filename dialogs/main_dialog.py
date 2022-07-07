@@ -109,13 +109,10 @@ class MainDialog(ComponentDialog):
                 summary_text = ( f"Got you, a flight {luis_entities}. Do you want to proceed?" )
             else:
                 summary_text = ( f"Ok, you'd like to book a flight. Do you want to proceed?")
-            
-            # Offer a YES/NO prompt.            
-            return await step_context.prompt(
-                    ConfirmPrompt.__name__, PromptOptions(prompt=MessageFactory.text(summary_text))
-                )               
 
         else:
+            self._luis_result = BookingDetails()
+            self._luis_entities_recongized = False
             summary_text = (
                 "Sorry, I didn't get that. Would you like to book a flight?"
             )
@@ -127,9 +124,10 @@ class MainDialog(ComponentDialog):
 
     async def act_step(self, step_context: WaterfallStepContext) -> DialogTurnResult:
         #send the luis result to application insights
-        self.telemetry_client.track_trace("luis_sucess_result" if step_context.result else "luis_failed_result", 
+        self.telemetry_client.track_trace("luis_sucess_result" if (step_context.result and self._luis_entities_recongized) else "luis_failed_result", 
                             {'user_message' : self._luis_text,
                             'luis_top_intent' : self._luis_top_intent,
+                            'luis_entitites' :  self._luis_entities_recongized,
                             'dst_city' : self._luis_result.origin,
                             'or_city' : self._luis_result.destination,
                             'start_date' : self._luis_result.travel_start_date,
