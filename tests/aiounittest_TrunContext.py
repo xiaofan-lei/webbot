@@ -55,30 +55,9 @@ class Test_context(aiounittest.AsyncTestCase):
     def test_should_create_context_with_request_and_adapter(self):
         TurnContext(SimpleAdapter(), ACTIVITY)
 
-    async def test_should_send_a_trace_activity(self):
+    def test_responded_should_be_automatically_set_to_false(self):
         context = TurnContext(SimpleAdapter(), ACTIVITY)
-        called = False
-
-        #  pylint: disable=unused-argument
-        async def aux_func(
-            ctx: TurnContext, activities: List[Activity], next: Callable
-        ):
-            nonlocal called
-            called = True
-            assert isinstance(activities, list), "activities not array."
-            assert len(activities) == 1, "invalid count of activities."
-            assert activities[0].type == ActivityTypes.trace, "type wrong."
-            assert activities[0].name == "name-text", "name wrong."
-            assert activities[0].value == "value-text", "value worng."
-            assert activities[0].value_type == "valueType-text", "valeuType wrong."
-            assert activities[0].label == "label-text", "label wrong."
-            return []
-
-        context.on_send_activities(aux_func)
-        await context.send_trace_activity(
-            "name-text", "value-text", "valueType-text", "label-text"
-        )
-        assert called
+        assert context.responded is False
 
 if aiounittest.AsyncTestCase == '__main__':
     aiounittest.main()
