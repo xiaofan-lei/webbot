@@ -99,7 +99,7 @@ class MainDialog(ComponentDialog):
             travel_start_date =f" leaving on {luis_result.travel_start_date}" if luis_result.travel_start_date else "" 
             travel_end_date = f" coming back on {luis_result.travel_end_date}" if luis_result.travel_end_date else ""  
             n_passengers = "for only one passenger" if luis_result.n_passengers==1 else f" for {luis_result.n_passengers} passengers" if luis_result.n_passengers else ""
-            budget = f" with a budget of {luis_result.budget}" if luis_result.budget else ""
+            budget = f" with a budget of {luis_result.budget}$" if luis_result.budget else ""
             luis_entities =  f"{origin}{destination}{travel_start_date}{travel_end_date}{n_passengers}{budget}"
 
             if len(luis_entities)>0:
